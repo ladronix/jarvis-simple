@@ -130,6 +130,9 @@ struct OnboardingView: View {
             Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
         case .failed:
             Button("Retry") { model.selectModel(model.settings.model) }
+            if model.canRedownload {
+                Button("Re-download") { model.redownloadModel() }
+            }
         case .idle:
             Button("Load") { model.selectModel(model.settings.model) }
         }

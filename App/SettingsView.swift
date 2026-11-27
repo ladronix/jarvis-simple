@@ -438,8 +438,12 @@ struct ModelSettings: View {
         case .ready:
             Label("Ready", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
         case .failed(let m):
-            Label(m, systemImage: "xmark.octagon").foregroundStyle(.red).lineLimit(2)
+            Label(m, systemImage: "xmark.octagon").foregroundStyle(.red).lineLimit(3)
             Button("Retry") { model.selectModel(model.settings.model) }
+            if model.canRedownload {
+                Button("Re-download") { model.redownloadModel() }
+                    .help("Delete this model's files and download them again")
+            }
         case .idle:
             Button("Load") { model.selectModel(model.settings.model) }
         }
@@ -476,16 +480,28 @@ struct PermissionRow: View {
     let state: PermissionState
 
     var body: some View {
-        HStack {
-            Image(systemName: state == .granted ? "checkmark.circle.fill" : "xmark.circle.fill")
-                .foregroundStyle(state == .granted ? .green : .red)
-            Text(permission.title)
-            Spacer()
-            if state != .granted {
-                Button("Request") { model.requestPermission(permission) }
-                Button("Open System Settings") { Permissions.openSettings(for: permission) }
-            } else {
-                Text("Granted").foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Image(systemName: state == .granted ? "checkmark.circle.fill" : "xmark.circle.fill")
+                    .foregroundStyle(state == .granted ? .green : .red)
+                Text(permission.title)
+                Spacer()
+                if state != .granted {
+                    Button("Request") { model.requestPermission(permission) }
+                    Button("Open System Settings") { Permissions.openSettings(for: permission) }
+                } else {
+                    Text("Granted").foregroundStyle(.secondary)
+                }
+            }
+            if permission == .accessibility, state != .granted {
+                // After an update with a different signature macOS keeps the old entry switched on
+                // while it no longer applies to this build.
+                Text(
+                    "Jarvis already listed and switched on? macOS may be showing an entry from an older version. Select Jarvis, remove it with −, then add it again with + (or drag Jarvis in from Applications)."
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
             }
         }
     }

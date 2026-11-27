@@ -47,7 +47,10 @@ final class AppModel {
         refreshDevices()
         registerHotkeys()
         models.load(settings.model)
-        requestNotificationAuthorization()
+        // On the first launch the notification prompt waits until onboarding is finished, so it
+        // does not cover the permission explanations.
+        if settings.onboardingDone { requestNotificationAuthorization() }
+        offerMoveToApplicationsIfNeeded()
 
         let missing = permissions.contains { $0.1 != .granted }
         if !settings.onboardingDone || missing {
@@ -283,6 +286,14 @@ final class AppModel {
         models.load(model)
     }
 
+    /// A failed load that is not about the network or disk space may be a damaged download.
+    var canRedownload: Bool {
+        if case .other = models.lastFailure { return true }
+        return false
+    }
+
+    func redownloadModel() { models.redownload(settings.model) }
+
     func selectDevice(_ device: AudioInputDevice?) {
         settings.deviceUID = device?.uid
         settings.deviceName = device?.name
@@ -403,6 +414,47 @@ final class AppModel {
     func finishOnboarding() {
         settings.onboardingDone = true
         onboarding?.close()
+        requestNotificationAuthorization()
+    }
+
+    // MARK: - Install location
+
+    /// Running from the mounted disk image (or a translocated copy) breaks once the image is
+    /// ejected and confuses permissions and launch at login. Offer to move to Applications.
+    private func offerMoveToApplicationsIfNeeded() {
+        let path = Bundle.main.bundlePath
+        guard path.hasPrefix("/Volumes/") || path.contains("/AppTranslocation/") else { return }
+        NSApp.activate()
+        let alert = NSAlert()
+        alert.messageText = "Move Jarvis Simple to Applications?"
+        alert.informativeText =
+            "Jarvis is running from the disk image. Move it to the Applications folder so it keeps working after the disk image is ejected and permissions stay in place."
+        alert.addButton(withTitle: "Move to Applications")
+        alert.addButton(withTitle: "Not Now")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        let fm = FileManager.default
+        let system = URL(fileURLWithPath: "/Applications", isDirectory: true)
+        let user = fm.homeDirectoryForCurrentUser.appendingPathComponent("Applications", isDirectory: true)
+        let folder = fm.isWritableFile(atPath: system.path) ? system : user
+        let destination = folder.appendingPathComponent(Bundle.main.bundleURL.lastPathComponent)
+        do {
+            try fm.createDirectory(at: folder, withIntermediateDirectories: true)
+            if fm.fileExists(atPath: destination.path) {
+                try fm.trashItem(at: destination, resultingItemURL: nil)
+            }
+            try fm.copyItem(at: Bundle.main.bundleURL, to: destination)
+        } catch {
+            lastError = "Could not move to \(folder.path): \(error.localizedDescription)"
+            Log.app.error("move to Applications failed: \(String(describing: error), privacy: .public)")
+            return
+        }
+        Log.app.info("moved to \(folder.path, privacy: .private)")
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.createsNewApplicationInstance = true
+        NSWorkspace.shared.openApplication(at: destination, configuration: configuration) { _, _ in
+            Task { @MainActor in NSApp.terminate(nil) }
+        }
     }
 
     /// Issue tracker on GitHub. Pre-fills the environment so reporters do not have to.
@@ -412,7 +464,7 @@ final class AppModel {
     /// before uninstalling.
     func deleteModelsAndQuit() {
         models.unload()
-        try? FileManager.default.removeItem(at: WhisperModel.defaultDownloadBase)
+        ModelManager.deleteAllModels()
         NSApp.terminate(nil)
     }
 

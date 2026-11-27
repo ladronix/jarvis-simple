@@ -43,7 +43,7 @@ No processing happens outside the user's Mac.
 | Item | Location | Removal |
 |---|---|---|
 | Settings | User defaults `com.ladronix.jarvis` | Settings → Privacy → Reset Settings, or delete the app's preferences |
-| Models | `~/Library/Application Support/Jarvis/Models` | Settings → Privacy → Delete Models…, or delete the folder |
+| Models | `~/Library/Application Support/Jarvis/Models` (speech) and `~/Library/Application Support/FluidAudio` (voice activity) | Settings → Privacy → Delete Models…, or delete the folders |
 | Application | `/Applications/Jarvis.app` | Move to Trash |
 
 Audio and text are never written to disk by the application.
@@ -62,7 +62,8 @@ not requested. The application refuses to insert text while macOS secure input i
 ## 7. Security
 
 - Runs as the user, no privileged helper, no network listener.
-- Hardened Runtime enabled; signed with a local certificate created on the Mac that builds it.
+- Hardened Runtime enabled. Released builds are signed with a Developer ID and notarized by Apple;
+  builds from source are signed with a local certificate created on the Mac that builds them.
 - Dependencies: WhisperKit (Argmax, MIT), FluidAudio (Apache-2.0), swift-argument-parser (Apple).
   Reviewed for network use: only the model download endpoints above.
 - Personal audio fixtures are git-ignored; the repository holds one synthetic test sample.
