@@ -1,33 +1,70 @@
 #!/usr/bin/env zsh
-# Build a Release Jarvis.app and package it as a .dmg and a .pkg in dist/.
+# Build a Release Jarvis.app and package it as a disk image in dist/.
 #
-# Usage: scripts/package.sh [--install]
-#   --install   also copy Jarvis.app to /Applications and launch it
+# Usage: scripts/package.sh [--install | --release]
+#   --install   also copy Jarvis.app to /Applications (or ~/Applications) and launch it
+#   --release   public build: Developer ID signature, notarization and stapling are required;
+#               prints the SHA-256 for the GitHub release and the Homebrew cask
 #
-# Signing: uses $JARVIS_SIGN_IDENTITY (default "-" = ad-hoc). Ad-hoc builds run on this Mac; on
-# other Macs Gatekeeper requires right-click → Open the first time (or a Developer ID +
-# notarization). $JARVIS_TEAM sets DEVELOPMENT_TEAM for automatic signing.
+# Signing identity, in order: $JARVIS_SIGN_IDENTITY, a "Developer ID Application" certificate,
+# the local "Jarvis Dev" certificate (scripts/make-dev-cert.sh), ad-hoc. macOS binds
+# Microphone and Accessibility grants to the identity, so keep using the same one on a Mac.
+# Notarization uses the notarytool keychain profile $JARVIS_NOTARY_PROFILE (default
+# "jarvis-notary"), created once with `xcrun notarytool store-credentials`.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+
+MODE="${1:-}"
+[[ -z "$MODE" || "$MODE" == --install || "$MODE" == --release ]] || {
+  echo "usage: scripts/package.sh [--install | --release]"
+  exit 2
+}
 
 command -v xcodegen >/dev/null || { echo "xcodegen missing: brew install xcodegen"; exit 1; }
 xcodegen generate --quiet
 
 VERSION=$(grep -E '^\s*MARKETING_VERSION:' project.yml | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
 BUILD=$(grep -E '^\s*CURRENT_PROJECT_VERSION:' project.yml | head -1 | sed -E 's/[^0-9]//g')
-# Prefer a stable local identity over ad-hoc: TCC (Accessibility, Microphone) binds grants to the
-# signing certificate, so a "Jarvis Dev" self-signed cert survives rebuilds. See scripts/make-dev-cert.sh.
+NOTARY_PROFILE="${JARVIS_NOTARY_PROFILE:-jarvis-notary}"
+
+# Identities are referenced by SHA-1: names with diacritics do not always match.
+identity_hash() {
+  security find-identity -v -p codesigning 2>/dev/null | grep -F "\"$1" | head -1 | awk '{print $2}'
+}
 IDENTITY="${JARVIS_SIGN_IDENTITY:-}"
 if [[ -z "$IDENTITY" ]]; then
-  if security find-identity -v -p codesigning 2>/dev/null | grep -q '"Jarvis Dev"'; then IDENTITY="Jarvis Dev"; else IDENTITY="-"; fi
+  IDENTITY=$(identity_hash "Developer ID Application:")
+  [[ -n "$IDENTITY" ]] || IDENTITY=$(identity_hash "Jarvis Dev")
+  [[ -n "$IDENTITY" ]] || IDENTITY="-"
 fi
+if [[ "$IDENTITY" == "-" ]]; then
+  IDENTITY_NAME="ad-hoc"
+else
+  IDENTITY_NAME=$(security find-identity -v -p codesigning 2>/dev/null | grep -F -- "$IDENTITY" | head -1 | sed -E 's/.*"(.*)".*/\1/')
+  [[ -n "$IDENTITY_NAME" ]] || IDENTITY_NAME="$IDENTITY"
+fi
+
+if [[ "$MODE" == --release ]]; then
+  [[ "$IDENTITY_NAME" == "Developer ID Application:"* ]] || {
+    echo "✗ --release needs a Developer ID Application certificate (found: $IDENTITY_NAME)."
+    exit 1
+  }
+  xcrun notarytool history --keychain-profile "$NOTARY_PROFILE" >/dev/null 2>&1 || {
+    echo "✗ notarytool profile \"$NOTARY_PROFILE\" missing. Create it once with:"
+    echo "  xcrun notarytool store-credentials $NOTARY_PROFILE --apple-id <Apple ID> --team-id <team id>"
+    exit 1
+  }
+  [[ -z "$(git status --porcelain)" ]] || { echo "✗ working tree has uncommitted changes"; exit 1; }
+fi
+
 DERIVED="$PWD/DerivedData"
 DIST="$PWD/dist"
 APP="$DERIVED/Build/Products/Release/Jarvis.app"
+DMG="$DIST/JarvisSimple-$VERSION-arm64.dmg"
 
-echo "▶ Building Jarvis $VERSION ($BUILD), signing identity: $IDENTITY"
+echo "▶ Building Jarvis Simple $VERSION ($BUILD), signing: $IDENTITY_NAME"
 rm -rf "$APP"
-# Xcode only signs with Apple-issued identities (needs a team), so build ad-hoc and re-sign below.
+# Xcode only signs with a configured team, so build ad-hoc and re-sign below.
 LOG=$(mktemp)
 xcodebuild -project Jarvis.xcodeproj -scheme Jarvis -configuration Release \
   -derivedDataPath "$DERIVED" -destination 'platform=macOS' \
@@ -37,32 +74,45 @@ grep -E "error:|BUILD (SUCCEEDED|FAILED)" "$LOG" | grep -vE "DVTPlugIn|IDESimula
 grep -q "BUILD SUCCEEDED" "$LOG" && [ -d "$APP" ] || { echo "build failed (see $LOG)"; exit 1; }
 rm -f "$LOG"
 
-# Re-sign the whole bundle deep so embedded frameworks/xcframeworks carry the same identity.
-codesign --force --deep --options runtime --sign "$IDENTITY" --entitlements App/Jarvis.entitlements "$APP"
-codesign --verify --deep --strict "$APP" && echo "▶ codesign OK ($(codesign -dv "$APP" 2>&1 | grep -E '^Signature' | cut -d= -f2))"
+# Sign inside-out: nested code first, then the app with its entitlements. A secure timestamp is
+# required for notarization and harmless otherwise (skipped for ad-hoc).
+SIGN_FLAGS=(--force --options runtime --sign "$IDENTITY")
+[[ "$IDENTITY" == "-" ]] || SIGN_FLAGS+=(--timestamp)
+find "$APP/Contents" -depth \( -name "*.dylib" -o -name "*.framework" -o -name "*.xpc" -o -name "*.appex" \) \
+  -print0 | while IFS= read -r -d '' nested; do
+  codesign "${SIGN_FLAGS[@]}" "$nested"
+done
+codesign "${SIGN_FLAGS[@]}" --entitlements App/Jarvis.entitlements "$APP"
+codesign --verify --deep --strict "$APP"
+echo "▶ codesign OK"
 
 mkdir -p "$DIST"
-rm -f "$DIST"/Jarvis-"$VERSION".{dmg,pkg}
-
-# DMG: drag-to-Applications layout.
+rm -f "$DMG"
+# Disk image: drag-to-Applications layout.
 STAGE=$(mktemp -d)
 cp -R "$APP" "$STAGE/"
 ln -s /Applications "$STAGE/Applications"
-hdiutil create -quiet -volname "Jarvis $VERSION" -srcfolder "$STAGE" -ov -format UDZO "$DIST/Jarvis-$VERSION.dmg"
+hdiutil create -quiet -volname "Jarvis Simple $VERSION" -srcfolder "$STAGE" -ov -format UDZO "$DMG"
 rm -rf "$STAGE"
-echo "▶ $DIST/Jarvis-$VERSION.dmg"
+[[ "$IDENTITY" == "-" ]] || codesign --force --timestamp --sign "$IDENTITY" "$DMG"
+echo "▶ $DMG"
 
-# PKG: installs into /Applications.
-PKGROOT=$(mktemp -d)
-mkdir -p "$PKGROOT/Applications"
-cp -R "$APP" "$PKGROOT/Applications/"
-# pkgbuild may print "write: Permission denied" without admin rights while still producing the package.
-pkgbuild --quiet --root "$PKGROOT" --identifier com.ladronix.jarvis.pkg --version "$VERSION" \
-  --install-location / "$DIST/Jarvis-$VERSION.pkg" 2> >(grep -v '^write: Permission denied' >&2)
-rm -rf "$PKGROOT"
-echo "▶ $DIST/Jarvis-$VERSION.pkg"
+if [[ "$MODE" == --release ]]; then
+  echo "▶ Notarizing (usually a few minutes)…"
+  xcrun notarytool submit "$DMG" --keychain-profile "$NOTARY_PROFILE" --wait
+  xcrun stapler staple "$DMG"
+  # Check the app as Gatekeeper sees it after a download.
+  MOUNT=$(mktemp -d)
+  hdiutil attach -quiet -nobrowse -readonly -mountpoint "$MOUNT" "$DMG"
+  spctl --assess --type execute --verbose=2 "$MOUNT/Jarvis.app"
+  hdiutil detach -quiet "$MOUNT"
+  spctl --assess --type open --context context:primary-signature --verbose=2 "$DMG"
+  echo "▶ notarized and stapled"
+fi
 
-if [[ "${1:-}" == "--install" ]]; then
+shasum -a 256 "$DMG" | tee "$DMG.sha256"
+
+if [[ "$MODE" == --install ]]; then
   # Prefer /Applications (admin rights via sudo when needed); otherwise fall back to
   # ~/Applications, which Spotlight and Launchpad index as well.
   TARGET=/Applications
@@ -71,7 +121,8 @@ if [[ "${1:-}" == "--install" ]]; then
     if [[ -t 0 ]] && sudo -v -p "Admin password for /Applications (Enter to skip → ~/Applications): " 2>/dev/null; then
       SUDO=sudo
     else
-      TARGET="$HOME/Applications"; mkdir -p "$TARGET"
+      TARGET="$HOME/Applications"
+      mkdir -p "$TARGET"
       echo "ℹ️  /Applications is not writable; installing to ~/Applications instead."
       echo "   For /Applications, re-run from an admin account."
     fi

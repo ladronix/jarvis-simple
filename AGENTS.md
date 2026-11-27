@@ -22,7 +22,7 @@ small and keep the app runnable.
 | `Core/Sources/JarvisCore/Settings/SettingsStore.swift` | `@Observable` settings in UserDefaults; one-time migration from `~/.jarvis_config.json`. |
 | `Core/Sources/jarvis-cli/main.swift` | `transcribe`, `detect`, `bench`, `models`, `record`, `inject`, `doctor`. |
 | `Core/Tests/` | Swift Testing suites; `Fixtures/` holds one synthetic Czech sample (personal recordings are git-ignored). |
-| `project.yml`, `scripts/` | xcodegen spec; `build.sh` (Debug build + launch), `package.sh` (Release → `dist/*.dmg`, `*.pkg`, `--install`), `make-dev-cert.sh` (local signing certificate), `render-icons.sh` (SVG → asset catalog), `lint.sh` (swift-format). |
+| `project.yml`, `scripts/` | xcodegen spec; `build.sh` (Debug build + launch), `package.sh` (Release → `dist/*.dmg`, `--install`, `--release` signs and notarizes), `make-dev-cert.sh` (local signing certificate), `render-icons.sh` (SVG → asset catalog), `lint.sh` (swift-format). |
 | `App/Design/` | SVG source of the app icon (original artwork; `scripts/render-icons.sh` rasterizes it). Menu and settings use SF Symbols. |
 
 Models: `~/Library/Application Support/Jarvis/Models`. Settings: UserDefaults `com.ladronix.jarvis`.
@@ -48,10 +48,19 @@ Logs: unified log, subsystem `com.ladronix.jarvis` (`/usr/bin/log stream …`; `
 - Bluetooth headset microphones (HFP, 24 kHz) sometimes deliver nothing; the 3 s watchdog reports
   it. `preferBuiltInMic` setting exists (default off).
 - **Signing:** Xcode builds ad-hoc (no team); `scripts/build.sh` and `scripts/package.sh` then
-  deep re-sign with the local self-signed "Jarvis Dev" certificate (`scripts/make-dev-cert.sh`).
-  TCC binds grants to that certificate, so Accessibility survives rebuilds. Without the cert,
-  every rebuild silently loses the grant while System Settings still shows it as on. CoreML/ANE
-  specialization is cached per model; a changed binary may or may not re-run it (1–2 min).
+  re-sign inside-out with, in order: `$JARVIS_SIGN_IDENTITY`, a "Developer ID Application"
+  certificate, the local self-signed "Jarvis Dev" certificate (`scripts/make-dev-cert.sh`),
+  ad-hoc. Identities are passed by SHA-1 because names with diacritics do not match reliably.
+  TCC binds grants to the signing identity, so keep one identity per Mac; switching (e.g. Jarvis
+  Dev → Developer ID) loses Accessibility once while System Settings still shows it as on (the
+  fix is remove with − and add again). CoreML/ANE specialization is cached per model; a changed
+  binary may or may not re-run it (1–2 min).
+- **Releases:** bump `MARKETING_VERSION` / `CURRENT_PROJECT_VERSION` in `project.yml` (the
+  Info.plist reads them), merge, then `scripts/package.sh --release` on a clean tree: Developer ID
+  signature, notarization (`notarytool` keychain profile `jarvis-notary`), stapling, Gatekeeper
+  check, `dist/JarvisSimple-<version>-arm64.dmg` and its SHA-256. Publish with
+  `gh release create v<version> dist/JarvisSimple-<version>-arm64.dmg`, then update `version` and
+  `sha256` in `Casks/jarvis-simple.rb` of `github.com/ladronix/homebrew-tap`.
 - `package.sh --install` installs to `/Applications` (with sudo when available) and falls back to
   `~/Applications` without admin rights.
 - Minimum macOS 26, Swift 6 language mode, strict concurrency. The app target compiles with
@@ -89,10 +98,10 @@ manually, never automate typing into them.
   process name `Jarvis`.
 - Feedback goes to GitHub issues (`AppModel.issuesURL`); keep that link working.
 
-## Known gaps (as of 2026-11-26)
+## Known gaps (as of 2026-11-27)
 
-1. Packages are signed with the local self-signed certificate only: other Macs need right-click →
-   Open on first launch. Public distribution needs an Apple Developer ID and notarization.
+1. Not in the Mac App Store and cannot be: the App Sandbox does not allow inserting text into other
+   apps through Accessibility. Distribution is GitHub Releases plus the `ladronix/tap` cask.
 2. Typing fallback disabled; re-test from a signed app (may work when not ad-hoc).
 3. Language allow-list uses "top-1 must be allowed, else auto"; true constrained decoding would
    need per-language token probabilities.

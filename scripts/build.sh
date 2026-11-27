@@ -6,9 +6,16 @@ CONFIG="${1:-Debug}"
 command -v xcodegen >/dev/null || { echo "xcodegen missing: brew install xcodegen"; exit 1; }
 xcodegen generate --quiet
 DERIVED="$PWD/DerivedData"
+# Same identity order as scripts/package.sh, so local builds and installed releases share the
+# Microphone and Accessibility grants. Identities are referenced by SHA-1 (diacritics in names).
+identity_hash() {
+  security find-identity -v -p codesigning 2>/dev/null | grep -F "\"$1" | head -1 | awk '{print $2}'
+}
 IDENTITY="${JARVIS_SIGN_IDENTITY:-}"
 if [[ -z "$IDENTITY" ]]; then
-  if security find-identity -v -p codesigning 2>/dev/null | grep -q '"Jarvis Dev"'; then IDENTITY="Jarvis Dev"; else IDENTITY="-"; fi
+  IDENTITY=$(identity_hash "Developer ID Application:")
+  [[ -n "$IDENTITY" ]] || IDENTITY=$(identity_hash "Jarvis Dev")
+  [[ -n "$IDENTITY" ]] || IDENTITY="-"
 fi
 APP="$DERIVED/Build/Products/$CONFIG/Jarvis.app"
 rm -rf "$APP"
@@ -27,7 +34,7 @@ if ! codesign --force --deep --options runtime --sign "$IDENTITY" --entitlements
   echo "   Run scripts/make-dev-cert.sh once to create the local certificate."
   IDENTITY="ad-hoc"
 fi
-echo "signed with: $IDENTITY"
+echo "signed with: $(codesign -dvv "$APP" 2>&1 | grep -m1 "^Authority=" | cut -d= -f2- || echo ad-hoc)"
 echo "built: $APP"
 if [[ "${2:-}" == "--open" ]]; then
   pkill -x Jarvis 2>/dev/null || true

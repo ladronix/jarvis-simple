@@ -39,21 +39,36 @@ matters when the reader is an AI model.
 
 ## Install
 
-You need an Apple Silicon Mac with macOS 26 or newer, Xcode 26 and [Homebrew](https://brew.sh).
-The app is built and signed on your own Mac.
+Apple Silicon Mac (M1 or newer) with macOS 26 or newer.
+
+**Homebrew**
 
 ```bash
-brew install xcodegen
-git clone https://github.com/ladronix/jarvis-simple.git && cd jarvis-simple
-scripts/make-dev-cert.sh          # once per Mac: creates a local signing certificate
-scripts/package.sh --install      # builds the app and installs it to /Applications
+brew install --cask ladronix/tap/jarvis-simple
 ```
+
+**Or download** `JarvisSimple-<version>-arm64.dmg` from
+[Releases](https://github.com/ladronix/jarvis-simple/releases/latest), open it and drag
+**Jarvis** to Applications. The app is signed and notarized by Apple.
 
 On first launch, allow **Microphone** and **Accessibility** when asked
 (System Settings → Privacy & Security). The speech model (about 1.6 GB) downloads once; the
 first start takes a minute or two while macOS prepares it, later starts take seconds.
 
-To update: `git pull` and run `scripts/package.sh --install` again. Permissions stay granted.
+Updates: `brew upgrade --cask jarvis-simple`, or download the new disk image and replace the app.
+
+<details>
+<summary>Build from source</summary>
+
+Needs Xcode 26 and `brew install xcodegen`.
+
+```bash
+git clone https://github.com/ladronix/jarvis-simple.git && cd jarvis-simple
+scripts/make-dev-cert.sh          # once per Mac: local signing certificate, keeps permissions across rebuilds
+scripts/package.sh --install      # builds the app and installs it to /Applications
+```
+
+</details>
 
 ## Use
 
@@ -69,6 +84,15 @@ To update: `git pull` and run `scripts/package.sh --install` again. Permissions 
 
 Shortcuts, microphone, languages, a vocabulary list (names and terms the model should spell
 correctly) and launch at login are in Settings, from the menu-bar icon.
+
+## Uninstall
+
+1. Settings → Privacy → **Delete Models…** (removes the downloaded models and quits), or delete
+   `~/Library/Application Support/Jarvis` and `~/Library/Application Support/FluidAudio`.
+2. Move **Jarvis** from Applications to the Trash (or `brew uninstall --cask --zap jarvis-simple`,
+   which also removes the models and settings).
+3. Optional: remove Jarvis from System Settings → Privacy & Security → Microphone and
+   Accessibility, and from General → Login Items.
 
 ## Privacy
 
