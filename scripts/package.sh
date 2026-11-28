@@ -62,6 +62,17 @@ codesign "${SIGN_FLAGS[@]}" --entitlements App/Jarvis.entitlements "$APP"
 codesign --verify --deep --strict "$APP"
 echo "▶ codesign OK"
 
+# Notarize and staple the app itself, not only the disk image: Homebrew copies the app out of
+# the image, and a stapled app passes Gatekeeper on its first launch even without a network.
+if [[ "$MODE" == --release ]]; then
+  echo "▶ Notarizing the app (usually a few minutes)…"
+  ZIP=$(mktemp -d)/Jarvis.zip
+  ditto -c -k --keepParent "$APP" "$ZIP"
+  xcrun notarytool submit "$ZIP" --keychain-profile "$NOTARY_PROFILE" --wait
+  rm -f "$ZIP"
+  xcrun stapler staple "$APP"
+fi
+
 mkdir -p "$DIST"
 rm -f "$DMG"
 # Disk image: drag-to-Applications layout.
@@ -74,13 +85,14 @@ rm -rf "$STAGE"
 echo "▶ $DMG"
 
 if [[ "$MODE" == --release ]]; then
-  echo "▶ Notarizing (usually a few minutes)…"
+  echo "▶ Notarizing the disk image…"
   xcrun notarytool submit "$DMG" --keychain-profile "$NOTARY_PROFILE" --wait
   xcrun stapler staple "$DMG"
   # Check the app as Gatekeeper sees it after a download.
   MOUNT=$(mktemp -d)
   hdiutil attach -quiet -nobrowse -readonly -mountpoint "$MOUNT" "$DMG"
   spctl --assess --type execute --verbose=2 "$MOUNT/Jarvis.app"
+  xcrun stapler validate "$MOUNT/Jarvis.app"
   hdiutil detach -quiet "$MOUNT"
   spctl --assess --type open --context context:primary-signature --verbose=2 "$DMG"
   echo "▶ notarized and stapled"

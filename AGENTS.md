@@ -71,7 +71,8 @@ Logs: unified log, subsystem `com.ladronix.jarvis` (`/usr/bin/log stream …`; `
   1. On a branch: bump `MARKETING_VERSION` / `CURRENT_PROJECT_VERSION` in `project.yml` (the
      Info.plist reads them) and add the version to `CHANGELOG.md`. Merge the PR once CI passes.
   2. On an up-to-date, clean `main`: `scripts/package.sh --release` (Developer ID signature,
-     notarization with the `notarytool` keychain profile `jarvis-notary`, stapling, Gatekeeper
+     notarization with the `notarytool` keychain profile `jarvis-notary` of the app and then of the
+     disk image, both stapled, Gatekeeper
      check, `dist/JarvisSimple-<version>-arm64.dmg` and its SHA-256).
   3. `gh release create v<version> dist/JarvisSimple-<version>-arm64.dmg dist/JarvisSimple-<version>-arm64.dmg.sha256 --target <full sha of main> --notes-file <notes>`
      with the CHANGELOG section as notes.
