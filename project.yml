@@ -59,8 +59,8 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.ladronix.jarvis
         PRODUCT_NAME: Jarvis
-        MARKETING_VERSION: "0.1.0"
-        CURRENT_PROJECT_VERSION: 1
+        MARKETING_VERSION: "0.1.1"
+        CURRENT_PROJECT_VERSION: 2
         ENABLE_HARDENED_RUNTIME: YES
         # Apple Silicon only: WhisperKit needs the Neural Engine.
         ARCHS: arm64
