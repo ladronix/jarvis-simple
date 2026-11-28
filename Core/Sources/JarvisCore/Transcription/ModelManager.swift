@@ -64,7 +64,8 @@ public final class ModelManager {
         if loadedModel == model, status.isReady { return }
         loadTask?.cancel()
         lastFailure = nil
-        status = Self.isDownloaded(model) ? .loading : .downloading(0)
+        // Verifying files already on disk shows as preparing; real downloads switch to progress.
+        status = .loading
         let vadConfig = vadConfig
         let previous = transcriber
         loadTask = Task { [weak self] in
