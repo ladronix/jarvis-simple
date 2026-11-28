@@ -13,7 +13,7 @@ small and keep the app runnable.
 | `App/AppModel.swift` | MainActor state machine idle → recording → processing, generation counter for cancel, hotkey wiring incl. push-to-talk, delivery (insert / copy), permissions, onboarding, notifications. |
 | `App/MenuBarView.swift`, `SettingsView.swift`, `OnboardingWindow.swift` | UI. Settings has a `HotkeyRecorder` (local NSEvent monitor). |
 | `Core/Sources/JarvisCore/Audio/` | `AudioCapture` (AVCaptureSession → 16 kHz mono Float32 stream, silent-input and no-input watchdogs), `AudioDevices` (CoreAudio enumeration, transport type, name-based fallback), `AudioFile` (fixtures). |
-| `Core/Sources/JarvisCore/VAD/VADChunker.swift` | Silero VAD (FluidAudio, 4096-sample blocks) driving the Python-era chunking rules: 250 ms min speech, 600 ms silence closes a chunk, 14 s max, flush on stop. |
+| `Core/Sources/JarvisCore/VAD/VADChunker.swift` | Silero VAD (FluidAudio, 4096-sample blocks) with the chunking rules: 250 ms min speech, 600 ms silence closes a chunk, 14 s max, flush on stop. |
 | `Core/Sources/JarvisCore/Transcription/` | `Transcriber` protocol, `WhisperKitTranscriber` (actor, one `WhisperKit` instance), `WhisperModels` catalog, `ModelManager` (download progress, prewarm, switch). |
 | `Core/Sources/JarvisCore/Text/` | `HallucinationFilter` (regex list + structural checks), `TranscriptAssembler` (ordered by chunk index, drops duplicates). |
 | `Core/Sources/JarvisCore/Session/DictationSession.swift` | One recording: capture → VAD → sequential transcription queue → assembler; `stop()` flushes and drains, `cancel()` discards. |

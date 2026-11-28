@@ -16,7 +16,7 @@ public struct AudioInputDevice: Sendable, Identifiable, Hashable {
     public var isBluetooth: Bool { transport == .bluetooth }
 }
 
-/// CoreAudio device enumeration and the name-based fallback the Python app used
+/// CoreAudio device enumeration and a name-based fallback
 /// (exact name, then substring, then system default).
 public enum AudioDevices {
     public static func inputDevices() -> [AudioInputDevice] {

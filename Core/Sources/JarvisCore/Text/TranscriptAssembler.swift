@@ -1,7 +1,7 @@
 import Foundation
 
 /// Collects chunk results by index and produces the final text in speaking order, dropping
-/// hallucinations and near-duplicates. Same semantics as the Python `_transcripts[idx]` map.
+/// hallucinations and near-duplicates.
 public struct TranscriptAssembler: Sendable {
     private var results: [Int: String] = [:]
     private var lastAccepted: String?

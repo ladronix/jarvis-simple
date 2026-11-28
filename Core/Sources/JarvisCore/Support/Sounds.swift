@@ -1,7 +1,7 @@
 import AppKit
 import Foundation
 
-/// Audible feedback. Same system sounds as the Python app (Tink on start, Glass on completion).
+/// Audible feedback with system sounds (Tink on start, Glass on completion).
 @MainActor
 public enum Sounds {
     public enum Cue: String, Sendable { case start = "Tink", done = "Glass", cancel = "Basso", error = "Sosumi" }

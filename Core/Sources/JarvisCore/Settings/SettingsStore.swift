@@ -1,7 +1,7 @@
 import Foundation
 import Observation
 
-/// Languages offered in the menu (same list as the Python app).
+/// Languages offered in the menu.
 public struct Language: Sendable, Identifiable, Hashable {
     public var id: String  // ISO 639-1, or "auto"
     public var name: String
@@ -28,7 +28,7 @@ public struct Language: Sendable, Identifiable, Hashable {
 public enum InsertionMode: String, Sendable, CaseIterable, Identifiable {
     case insert  // at the caret, clipboard restored
     case insertAndCopy  // at the caret, and leave it on the clipboard
-    case copyOnly  // Python behavior
+    case copyOnly
     public var id: String { rawValue }
     public var title: String {
         switch self {
@@ -40,7 +40,6 @@ public enum InsertionMode: String, Sendable, CaseIterable, Identifiable {
 }
 
 /// All user settings, persisted in `UserDefaults`, observable by SwiftUI.
-/// Migrates once from the Python app's `~/.jarvis_config.json`.
 @MainActor
 @Observable
 public final class SettingsStore {
@@ -70,7 +69,6 @@ public final class SettingsStore {
     public var hotkeyCancel: Hotkey { didSet { save(hotkeyCancel, key: "hotkeyCancel") } }
     public var hotkeyPushToTalk: Hotkey { didSet { save(hotkeyPushToTalk, key: "hotkeyPushToTalk") } }
     public var pushToTalkEnabled: Bool { didSet { defaults.set(pushToTalkEnabled, forKey: "pushToTalkEnabled") } }
-    public var debugLogging: Bool { didSet { defaults.set(debugLogging, forKey: "debugLogging") } }
     public var onboardingDone: Bool { didSet { defaults.set(onboardingDone, forKey: "onboardingDone") } }
 
     public init(defaults: UserDefaults = .standard) {
@@ -93,13 +91,7 @@ public final class SettingsStore {
         hotkeyCancel = Self.load(defaults, key: "hotkeyCancel") ?? .defaultCancel
         hotkeyPushToTalk = Self.load(defaults, key: "hotkeyPushToTalk") ?? .defaultPushToTalk
         pushToTalkEnabled = defaults.object(forKey: "pushToTalkEnabled") as? Bool ?? true
-        debugLogging = defaults.bool(forKey: "debugLogging")
         onboardingDone = defaults.bool(forKey: "onboardingDone")
-
-        if !defaults.bool(forKey: "migratedFromJSONv1") {
-            migrateLegacyConfig()
-            defaults.set(true, forKey: "migratedFromJSONv1")
-        }
     }
 
     public var vadConfig: VADChunker.Config {
@@ -116,25 +108,6 @@ public final class SettingsStore {
     }
 
     public var model: WhisperModel { WhisperModel.byKey(modelKey) ?? .default }
-
-    // MARK: - Legacy migration
-
-    /// Reads `~/.jarvis_config.json` (Python app) once. The file is left untouched.
-    public func migrateLegacyConfig(
-        at url: URL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".jarvis_config.json")
-    ) {
-        guard let data = try? Data(contentsOf: url),
-            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-        else { return }
-        if let l = json["language"] as? String, Language.all.contains(where: { $0.id == l }) { language = l }
-        if let m = json["model_size"] as? String, WhisperModel.byKey(m) != nil { modelKey = m }
-        if let d = json["device_name"] as? String, !d.isEmpty { deviceName = d }
-        if let s = json["completion_sound"] as? Bool { completionSound = s }
-        if let h = json["hotkey_start"] as? String, let k = Hotkey.fromLegacyCharacter(h) { hotkeyStart = k }
-        if let h = json["hotkey_stop"] as? String, let k = Hotkey.fromLegacyCharacter(h) { hotkeyStop = k }
-        if let h = json["hotkey_cancel"] as? String, let k = Hotkey.fromLegacyCharacter(h) { hotkeyCancel = k }
-        Log.app.info("migrated legacy config from \(url.path, privacy: .private)")
-    }
 
     /// Restore every setting to its default. Models on disk are left alone.
     public func resetToDefaults() {
@@ -156,7 +129,6 @@ public final class SettingsStore {
         hotkeyCancel = .defaultCancel
         hotkeyPushToTalk = .defaultPushToTalk
         pushToTalkEnabled = true
-        debugLogging = false
     }
 
     // MARK: - Helpers
