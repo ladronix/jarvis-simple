@@ -291,16 +291,16 @@ struct Bench: AsyncParsableCommand {
 // MARK: - models
 
 struct Models: ParsableCommand {
-    static let configuration = CommandConfiguration(abstract: "List known models and their download state.")
+    static let configuration = CommandConfiguration(
+        abstract: "List known models and whether their pinned files are downloaded and verified.")
 
     func run() throws {
         let base = WhisperModel.defaultDownloadBase
         print("download base: \(base.path)")
         for m in WhisperModel.catalog {
-            let present = FileManager.default.fileExists(
-                atPath: base.appendingPathComponent("models/argmaxinc/whisperkit-coreml/\(m.variant)").path)
+            let present = ModelStore.isReady(m.sources, base: base)
             print(
-                "\(m.id.padding(toLength: 20, withPad: " ", startingAt: 0)) \(m.variant.padding(toLength: 48, withPad: " ", startingAt: 0)) ~\(m.approxSizeMB) MB  \(present ? "downloaded" : "-")  \(m.note)"
+                "\(m.id.padding(toLength: 20, withPad: " ", startingAt: 0)) \(m.variant.padding(toLength: 48, withPad: " ", startingAt: 0)) ~\(m.approxSizeMB) MB  \(present ? "verified" : "-")  \(m.note)"
             )
         }
     }

@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  core:
+    name: Core (build, test, lint)
+    runs-on: xcode-27
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Toolchain
+        run: xcodebuild -version && swift --version
+      - name: Build
+        working-directory: Core
+        run: swift build --only-use-versions-from-resolved-file
+      - name: Test
+        working-directory: Core
+        run: swift test --only-use-versions-from-resolved-file
+      - name: Package.resolved unchanged
+        run: git diff --exit-code -- Core/Package.resolved
+      - name: Lint
+        run: scripts/lint.sh
+
+  app:
+    name: App (Xcode build)
+    runs-on: xcode-27
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install xcodegen
+        run: brew install xcodegen
+      - name: Build (Release, ad-hoc signed)
+        run: scripts/build.sh Release
+      - name: Check bundle
+        run: |
+          APP=DerivedData/Build/Products/Release/Jarvis.app
+          plutil -extract CFBundleIdentifier raw "$APP/Contents/Info.plist" | grep -qx com.ladronix.jarvis
+          codesign -d --entitlements - --xml "$APP" | plutil -p - | tee /dev/stderr \
+            | grep -q '"com.apple.security.device.audio-input" => true'

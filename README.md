@@ -88,17 +88,37 @@ correctly) and launch at login are in Settings, from the menu-bar icon.
 ## Uninstall
 
 1. Settings → Privacy → **Delete Models…** (removes the downloaded models and quits), or delete
-   `~/Library/Application Support/Jarvis` and `~/Library/Application Support/FluidAudio`.
+   `~/Library/Application Support/Jarvis` (and `~/Library/Application Support/FluidAudio` if a
+   version before 0.1.1 created it).
 2. Move **Jarvis** from Applications to the Trash (or `brew uninstall --cask --zap jarvis-simple`,
    which also removes the models and settings).
 3. Optional: remove Jarvis from System Settings → Privacy & Security → Microphone and
    Accessibility, and from General → Login Items.
 
+## Troubleshooting
+
+- **Nothing is inserted, the text is only on the clipboard.** Accessibility is missing or stale.
+  In System Settings → Privacy & Security → Accessibility, remove Jarvis with **−**, add it again,
+  then choose **Restart Jarvis to apply permissions** in the menu (or quit and reopen Jarvis). This is needed once after switching from a build you
+  made yourself to a release, because macOS ties the permission to the signature.
+- **The microphone indicator flickers, or music in AirPods drops in quality while recording.**
+  That is macOS switching a Bluetooth headset to its call profile when its microphone opens.
+  Turn on Settings → Audio → **Prefer the built-in microphone over Bluetooth headsets** to record
+  from the Mac's own microphone instead; it also gives better recognition.
+- **"No audio from the microphone".** Pick another input in Settings → Audio, and check
+  System Settings → Privacy & Security → Microphone.
+- **The model download fails.** Jarvis resumes when you are back online. If it keeps failing,
+  use **Re-download** in Settings → Models; every file is checked before use, so a damaged
+  download is never loaded.
+- **The first start after an update takes longer.** macOS prepares the model for the Neural
+  Engine again; later starts take seconds.
+
 ## Privacy
 
 Audio stays in memory and is discarded after each recording. Transcripts are never stored or
-logged. The only network access is the one-time model download from huggingface.co. No
-analytics, no accounts. Details in [PRIVACY.md](PRIVACY.md).
+logged. The only network access is the one-time model download from huggingface.co, from fixed
+versions whose checksums are built into the app. No analytics, no accounts. Details in
+[PRIVACY.md](PRIVACY.md) and [SECURITY.md](SECURITY.md).
 
 ## How it works
 
@@ -123,7 +143,9 @@ See [AGENTS.md](AGENTS.md) for the code layout and runtime notes.
 ## Feedback
 
 Found a problem? Use **Report an Issue…** in the menu, or open an
-[issue](https://github.com/ladronix/jarvis-simple/issues).
+[issue](https://github.com/ladronix/jarvis-simple/issues). Security problems: see
+[SECURITY.md](SECURITY.md). Contributions: [CONTRIBUTING.md](CONTRIBUTING.md). Changes per
+version: [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 

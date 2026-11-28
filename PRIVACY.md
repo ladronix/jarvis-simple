@@ -1,6 +1,6 @@
 # Jarvis Simple — privacy
 
-What the application processes and where. Version 0.1.0.
+What the application processes and where. Version 0.1.1.
 
 ## 1. Purpose
 
@@ -31,8 +31,9 @@ No processing happens outside the user's Mac.
 ## 4. Network
 
 - **Model download (one time):** the application downloads the speech model and the voice
-  activity model from `huggingface.co` on first use (about 1.6 GB). The request carries no user
-  data beyond what any HTTPS download exposes (IP address, user agent).
+  activity model from `huggingface.co` on first use (about 1.6 GB), from fixed commits, and checks
+  every file's SHA-256 before using it. The request carries no user data beyond what any HTTPS
+  download exposes (IP address, user agent).
 - **Feedback (user-initiated):** "Report an Issue…" opens the browser at the GitHub issue tracker
   with a pre-filled template containing the app version, macOS version and model name. The user
   decides what else to write and whether to submit.
@@ -43,7 +44,7 @@ No processing happens outside the user's Mac.
 | Item | Location | Removal |
 |---|---|---|
 | Settings | User defaults `com.ladronix.jarvis` | Settings → Privacy → Reset Settings, or delete the app's preferences |
-| Models | `~/Library/Application Support/Jarvis/Models` (speech) and `~/Library/Application Support/FluidAudio` (voice activity) | Settings → Privacy → Delete Models…, or delete the folders |
+| Models | `~/Library/Application Support/Jarvis/Models` (speech and voice activity; versions before 0.1.1 also used `~/Library/Application Support/FluidAudio`) | Settings → Privacy → Delete Models…, or delete the folders |
 | Application | `/Applications/Jarvis.app` | Move to Trash |
 
 Audio and text are never written to disk by the application.
@@ -65,7 +66,9 @@ not requested. The application refuses to insert text while macOS secure input i
 - Hardened Runtime enabled. Released builds are signed with a Developer ID and notarized by Apple;
   builds from source are signed with a local certificate created on the Mac that builds them.
 - Dependencies: WhisperKit (Argmax, MIT), FluidAudio (Apache-2.0), swift-argument-parser (Apple).
-  Reviewed for network use: only the model download endpoints above.
+  Reviewed for network use: only the model download endpoints above, and none of them download
+  anything themselves: Jarvis fetches and verifies the model files. Versions are fixed in the
+  committed `Package.resolved`; see [SECURITY.md](SECURITY.md).
 - Personal audio fixtures are git-ignored; the repository holds one synthetic test sample.
 
 ## 8. Your control

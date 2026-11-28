@@ -8,7 +8,7 @@ DerivedData/
 xcuserdata/
 
 # Downloaded models and local audio
-Models/
+/Models/
 .voice_cache/
 # Personal voice recordings used as local fixtures; only the synthetic sample is tracked.
 Core/Tests/Fixtures/voice_*.wav

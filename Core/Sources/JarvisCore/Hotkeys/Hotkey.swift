@@ -18,33 +18,13 @@ public struct Hotkey: Codable, Sendable, Hashable {
     public static let option = UInt32(optionKey)
     public static let control = UInt32(controlKey)
 
-    /// Defaults match the Python app: Cmd+; start, Cmd+' stop, Cmd+. cancel (US key positions).
+    /// Defaults: Cmd+; start, Cmd+' stop, Cmd+. cancel (US key positions).
     public static let defaultStart = Hotkey(keyCode: UInt32(kVK_ANSI_Semicolon), modifiers: cmd)
     public static let defaultStop = Hotkey(keyCode: UInt32(kVK_ANSI_Quote), modifiers: cmd)
     public static let defaultCancel = Hotkey(keyCode: UInt32(kVK_ANSI_Period), modifiers: cmd)
     /// Hold to record, release to insert. ⌃⌥Space avoids Spotlight (⌘Space), input switching
     /// (⌃Space) and Raycast/Alfred (⌥Space).
     public static let defaultPushToTalk = Hotkey(keyCode: UInt32(kVK_Space), modifiers: control | option)
-
-    /// Map the Python config's single characters to US key codes.
-    public static func fromLegacyCharacter(_ ch: String, modifiers: UInt32 = cmd) -> Hotkey? {
-        let map: [String: Int] = [
-            ";": kVK_ANSI_Semicolon, "'": kVK_ANSI_Quote, ".": kVK_ANSI_Period, ",": kVK_ANSI_Comma,
-            "/": kVK_ANSI_Slash, "[": kVK_ANSI_LeftBracket, "]": kVK_ANSI_RightBracket, "\\": kVK_ANSI_Backslash,
-            "-": kVK_ANSI_Minus, "=": kVK_ANSI_Equal, "`": kVK_ANSI_Grave,
-        ]
-        if let code = map[ch] { return Hotkey(keyCode: UInt32(code), modifiers: modifiers) }
-        if ch.count == 1, let scalar = ch.lowercased().unicodeScalars.first, scalar.value >= 97, scalar.value <= 122 {
-            let letters: [Int] = [
-                kVK_ANSI_A, kVK_ANSI_B, kVK_ANSI_C, kVK_ANSI_D, kVK_ANSI_E, kVK_ANSI_F, kVK_ANSI_G, kVK_ANSI_H,
-                kVK_ANSI_I, kVK_ANSI_J, kVK_ANSI_K, kVK_ANSI_L, kVK_ANSI_M, kVK_ANSI_N, kVK_ANSI_O, kVK_ANSI_P,
-                kVK_ANSI_Q, kVK_ANSI_R, kVK_ANSI_S, kVK_ANSI_T, kVK_ANSI_U, kVK_ANSI_V, kVK_ANSI_W, kVK_ANSI_X,
-                kVK_ANSI_Y, kVK_ANSI_Z,
-            ]
-            return Hotkey(keyCode: UInt32(letters[Int(scalar.value) - 97]), modifiers: modifiers)
-        }
-        return nil
-    }
 
     /// Human-readable form using the current keyboard layout, e.g. "⌘;" or "⌘ů".
     public var display: String {

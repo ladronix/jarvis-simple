@@ -2,7 +2,6 @@ import Testing
 
 @testable import JarvisCore
 
-/// Same strings and thresholds as the Python `_is_hallucination` / `_is_near_duplicate`.
 @Suite struct HallucinationFilterTests {
     @Test func knownArtifactsAreStripped() {
         #expect(HallucinationFilter.strip("Ahoj světe. Titulky vytvořil JohnyX") == "Ahoj světe.")

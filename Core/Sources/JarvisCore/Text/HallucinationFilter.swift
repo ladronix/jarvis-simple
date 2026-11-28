@@ -1,10 +1,10 @@
 import Foundation
 
-/// Port of the Python app's `_is_hallucination` / `_is_near_duplicate`.
+/// Drops Whisper hallucinations and near-duplicate chunks.
 ///
 /// Whisper produces YouTube-subtitle artifacts ("Titulky vytvořil…", "Thank you for watching") and
 /// word loops on silence or noise. The structural checks (uniqueness ratio, bigram repetition) are
-/// deliberately identical to the Python thresholds so behavior does not regress.
+/// tuned on real recordings; tighten them only with a test.
 public enum HallucinationFilter {
     /// Known artifact phrases. Add patterns; do not loosen the structural checks below.
     public static let patterns: [String] = [
@@ -25,8 +25,7 @@ public enum HallucinationFilter {
     ]
 
     private static let combined: NSRegularExpression = {
-        // NSRegularExpression handles Unicode word characters (\w matches "ř") the same way Python's
-        // `re` does with str patterns.
+        // NSRegularExpression matches Unicode word characters (\w matches "ř").
         try! NSRegularExpression(pattern: patterns.joined(separator: "|"))
     }()
 

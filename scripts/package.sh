@@ -6,9 +6,8 @@
 #   --release   public build: Developer ID signature, notarization and stapling are required;
 #               prints the SHA-256 for the GitHub release and the Homebrew cask
 #
-# Signing identity, in order: $JARVIS_SIGN_IDENTITY, a "Developer ID Application" certificate,
-# the local "Jarvis Dev" certificate (scripts/make-dev-cert.sh), ad-hoc. macOS binds
-# Microphone and Accessibility grants to the identity, so keep using the same one on a Mac.
+# Signing identity: see pick_identity in scripts/common.sh. macOS binds Microphone and
+# Accessibility grants to the identity, so keep using the same one on a Mac.
 # Notarization uses the notarytool keychain profile $JARVIS_NOTARY_PROFILE (default
 # "jarvis-notary"), created once with `xcrun notarytool store-credentials`.
 set -euo pipefail
@@ -20,29 +19,13 @@ MODE="${1:-}"
   exit 2
 }
 
-command -v xcodegen >/dev/null || { echo "xcodegen missing: brew install xcodegen"; exit 1; }
-xcodegen generate --quiet
+source scripts/common.sh
+prepare_project
 
 VERSION=$(grep -E '^\s*MARKETING_VERSION:' project.yml | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
 BUILD=$(grep -E '^\s*CURRENT_PROJECT_VERSION:' project.yml | head -1 | sed -E 's/[^0-9]//g')
 NOTARY_PROFILE="${JARVIS_NOTARY_PROFILE:-jarvis-notary}"
-
-# Identities are referenced by SHA-1: names with diacritics do not always match.
-identity_hash() {
-  security find-identity -v -p codesigning 2>/dev/null | grep -F "\"$1" | head -1 | awk '{print $2}'
-}
-IDENTITY="${JARVIS_SIGN_IDENTITY:-}"
-if [[ -z "$IDENTITY" ]]; then
-  IDENTITY=$(identity_hash "Developer ID Application:")
-  [[ -n "$IDENTITY" ]] || IDENTITY=$(identity_hash "Jarvis Dev")
-  [[ -n "$IDENTITY" ]] || IDENTITY="-"
-fi
-if [[ "$IDENTITY" == "-" ]]; then
-  IDENTITY_NAME="ad-hoc"
-else
-  IDENTITY_NAME=$(security find-identity -v -p codesigning 2>/dev/null | grep -F -- "$IDENTITY" | head -1 | sed -E 's/.*"(.*)".*/\1/')
-  [[ -n "$IDENTITY_NAME" ]] || IDENTITY_NAME="$IDENTITY"
-fi
+pick_identity
 
 if [[ "$MODE" == --release ]]; then
   [[ "$IDENTITY_NAME" == "Developer ID Application:"* ]] || {
@@ -64,15 +47,8 @@ DMG="$DIST/JarvisSimple-$VERSION-arm64.dmg"
 
 echo "▶ Building Jarvis Simple $VERSION ($BUILD), signing: $IDENTITY_NAME"
 rm -rf "$APP"
-# Xcode only signs with a configured team, so build ad-hoc and re-sign below.
-LOG=$(mktemp)
-xcodebuild -project Jarvis.xcodeproj -scheme Jarvis -configuration Release \
-  -derivedDataPath "$DERIVED" -destination 'platform=macOS' \
-  CODE_SIGN_IDENTITY="-" DEVELOPMENT_TEAM="${JARVIS_TEAM:-}" \
-  build >"$LOG" 2>&1 || true
-grep -E "error:|BUILD (SUCCEEDED|FAILED)" "$LOG" | grep -vE "DVTPlugIn|IDESimulator" || true
-grep -q "BUILD SUCCEEDED" "$LOG" && [ -d "$APP" ] || { echo "build failed (see $LOG)"; exit 1; }
-rm -f "$LOG"
+xcode_build Release
+[[ -d "$APP" ]] || { echo "build produced no app"; exit 1; }
 
 # Sign inside-out: nested code first, then the app with its entitlements. A secure timestamp is
 # required for notarization and harmless otherwise (skipped for ad-hoc).

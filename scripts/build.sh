@@ -2,39 +2,24 @@
 # Build Jarvis.app (Debug by default). Usage: scripts/build.sh [Debug|Release] [--open]
 set -euo pipefail
 cd "$(dirname "$0")/.."
+source scripts/common.sh
 CONFIG="${1:-Debug}"
-command -v xcodegen >/dev/null || { echo "xcodegen missing: brew install xcodegen"; exit 1; }
-xcodegen generate --quiet
-DERIVED="$PWD/DerivedData"
-# Same identity order as scripts/package.sh, so local builds and installed releases share the
-# Microphone and Accessibility grants. Identities are referenced by SHA-1 (diacritics in names).
-identity_hash() {
-  security find-identity -v -p codesigning 2>/dev/null | grep -F "\"$1" | head -1 | awk '{print $2}'
-}
-IDENTITY="${JARVIS_SIGN_IDENTITY:-}"
-if [[ -z "$IDENTITY" ]]; then
-  IDENTITY=$(identity_hash "Developer ID Application:")
-  [[ -n "$IDENTITY" ]] || IDENTITY=$(identity_hash "Jarvis Dev")
-  [[ -n "$IDENTITY" ]] || IDENTITY="-"
-fi
-APP="$DERIVED/Build/Products/$CONFIG/Jarvis.app"
+APP="$PWD/DerivedData/Build/Products/$CONFIG/Jarvis.app"
+
+prepare_project
+# Same identity as installed releases, so they share the Microphone and Accessibility grants.
+pick_identity
 rm -rf "$APP"
-# Xcode only signs with Apple-issued identities (needs a team), so build ad-hoc and re-sign below.
-LOG=$(mktemp)
-xcodebuild -project Jarvis.xcodeproj -scheme Jarvis -configuration "$CONFIG" \
-  -derivedDataPath "$DERIVED" -destination 'platform=macOS' \
-  CODE_SIGN_IDENTITY="-" DEVELOPMENT_TEAM="${JARVIS_TEAM:-}" \
-  build >"$LOG" 2>&1 || true
-grep -E "error:|warning: .*App/|BUILD (SUCCEEDED|FAILED)" "$LOG" | grep -vE "DVTPlugIn|IDESimulator" || true
-grep -q "BUILD SUCCEEDED" "$LOG" && [ -d "$APP" ] || { echo "build failed (see $LOG)"; exit 1; }
-rm -f "$LOG"
-# Deep re-sign so embedded frameworks carry the same identity (stable TCC grants).
+xcode_build "$CONFIG"
+[[ -d "$APP" ]] || { echo "build produced no app"; exit 1; }
+
+# Deep re-sign so embedded code carries the same identity (stable TCC grants).
 if ! codesign --force --deep --options runtime --sign "$IDENTITY" --entitlements App/Jarvis.entitlements "$APP" 2>/dev/null; then
-  echo "⚠️  signing with \"$IDENTITY\" failed; the app stays ad-hoc signed and macOS will ask for permissions again."
+  echo "⚠️  signing with \"$IDENTITY_NAME\" failed; the app stays ad-hoc signed and macOS will ask for permissions again."
   echo "   Run scripts/make-dev-cert.sh once to create the local certificate."
-  IDENTITY="ad-hoc"
 fi
-echo "signed with: $(codesign -dvv "$APP" 2>&1 | grep -m1 "^Authority=" | cut -d= -f2- || echo ad-hoc)"
+AUTHORITY=$(codesign -dvv "$APP" 2>&1 | sed -n 's/^Authority=//p' | head -1)
+echo "signed with: ${AUTHORITY:-ad-hoc}"
 echo "built: $APP"
 if [[ "${2:-}" == "--open" ]]; then
   pkill -x Jarvis 2>/dev/null || true
