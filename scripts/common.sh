@@ -15,8 +15,9 @@ XCODE_PIN_FLAGS=(-onlyUsePackageVersionsFromResolvedFile -skipPackageUpdates)
 # Signing identity, in order: $JARVIS_SIGN_IDENTITY, a "Developer ID Application" certificate,
 # the local "Jarvis Dev" certificate (scripts/make-dev-cert.sh), ad-hoc ("-"). Identities are
 # referenced by SHA-1: names with diacritics do not always match. Sets IDENTITY and IDENTITY_NAME.
+# `|| true`: no match is a normal result, not an error under `set -o pipefail`.
 identity_hash() {
-  security find-identity -v -p codesigning 2>/dev/null | grep -F "\"$1" | head -1 | awk '{print $2}'
+  { security find-identity -v -p codesigning 2>/dev/null | grep -F "\"$1" | head -1 | awk '{print $2}'; } || true
 }
 pick_identity() {
   IDENTITY="${JARVIS_SIGN_IDENTITY:-}"
@@ -28,7 +29,7 @@ pick_identity() {
   if [[ "$IDENTITY" == "-" ]]; then
     IDENTITY_NAME="ad-hoc"
   else
-    IDENTITY_NAME=$(security find-identity -v -p codesigning 2>/dev/null | grep -F -- "$IDENTITY" | head -1 | sed -E 's/.*"(.*)".*/\1/')
+    IDENTITY_NAME=$({ security find-identity -v -p codesigning 2>/dev/null | grep -F -- "$IDENTITY" | head -1 | sed -E 's/.*"(.*)".*/\1/'; } || true)
     [[ -n "$IDENTITY_NAME" ]] || IDENTITY_NAME="$IDENTITY"
   fi
 }
