@@ -1,0 +1,49 @@
+name: Bug report
+description: Something does not work as expected.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please do not paste private transcripts or audio. For a security problem, use
+        [private vulnerability reporting](https://github.com/ladronix/jarvis-simple/security/advisories/new) instead.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: Steps, the app you dictated into, and what you saw.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Jarvis Simple version
+      placeholder: "0.1.1"
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version and Mac
+      placeholder: "macOS 26.2, MacBook Pro M3"
+    validations:
+      required: true
+  - type: dropdown
+    id: mic
+    attributes:
+      label: Microphone
+      options: [Built-in, Bluetooth headset (AirPods etc.), USB or other]
+  - type: textarea
+    id: log
+    attributes:
+      label: Log (optional)
+      description: |
+        `/usr/bin/log show --last 10m --predicate 'subsystem == "com.ladronix.jarvis"' --info`
+        The log never contains what you said; check it before pasting anyway.
+      render: text
