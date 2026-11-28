@@ -73,7 +73,7 @@ Logs: unified log, subsystem `com.ladronix.jarvis` (`/usr/bin/log stream …`; `
   2. On an up-to-date, clean `main`: `scripts/package.sh --release` (Developer ID signature,
      notarization with the `notarytool` keychain profile `jarvis-notary`, stapling, Gatekeeper
      check, `dist/JarvisSimple-<version>-arm64.dmg` and its SHA-256).
-  3. `gh release create v<version> dist/JarvisSimple-<version>-arm64.dmg dist/*.sha256 --target <sha of main> --notes-file <notes>`
+  3. `gh release create v<version> dist/JarvisSimple-<version>-arm64.dmg dist/JarvisSimple-<version>-arm64.dmg.sha256 --target <full sha of main> --notes-file <notes>`
      with the CHANGELOG section as notes.
   4. In `github.com/ladronix/homebrew-tap`, on a branch: update `version` and `sha256` in
      `Casks/jarvis-simple.rb`, open a PR, merge when its check passes.
