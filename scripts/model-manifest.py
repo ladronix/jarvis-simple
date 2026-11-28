@@ -1,0 +1,147 @@
+#!/usr/bin/env python3
+"""Generate Core/Sources/JarvisCore/Models/ModelManifest+Pinned.swift.
+
+Jarvis downloads every model file from Hugging Face at a fixed commit and checks its SHA-256
+before use. This script records those commits, file sizes and hashes. Run it only when a model
+or a pinned revision changes, then review the diff:
+
+    scripts/model-manifest.py            # regenerate from the revisions below
+    scripts/model-manifest.py --check    # exit 1 if the generated file is out of date
+
+Large files carry their SHA-256 in the Hugging Face API (Git LFS object id). Small files are
+downloaded once at the pinned commit and hashed here. Standard library only.
+"""
+
+import hashlib
+import json
+import sys
+import urllib.parse
+import urllib.request
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+OUTPUT = ROOT / "Core/Sources/JarvisCore/Models/ModelManifest+Pinned.swift"
+HUB = "https://huggingface.co"
+
+WHISPERKIT_REPO = "argmaxinc/whisperkit-coreml"
+WHISPERKIT_REVISION = "0f63a7800b00dd0226abd051b906c246e1907482"
+
+# Tokenizers WhisperKit expects next to the models (models/<repo>/ under the download base).
+TOKENIZERS = {
+    "openai/whisper-large-v3": "06f233fe06e710322aca913c1bc4249a0d71fce1",
+    "openai/whisper-small": "973afd24965f72e36ca33b3055d56a652f456b4d",
+}
+TOKENIZER_FILES = ["config.json", "tokenizer.json", "tokenizer_config.json"]
+
+VAD_REPO = "FluidInference/silero-vad-coreml"
+VAD_REVISION = "b419383c55c110e2c9271fa6ee0ea83d03c70d96"
+VAD_MODEL = "silero-vad-unified-256ms-v6.2.1.mlmodelc"
+
+# Swift name, WhisperKit variant folder, tokenizer repo.
+WHISPER_MODELS = [
+    ("largeV3Turbo", "openai_whisper-large-v3-v20240930_turbo", "openai/whisper-large-v3"),
+    ("largeV3TurboCompressed", "openai_whisper-large-v3-v20240930_turbo_632MB", "openai/whisper-large-v3"),
+    ("small", "openai_whisper-small_216MB", "openai/whisper-small"),
+]
+
+
+def get_json(url):
+    with urllib.request.urlopen(url, timeout=60) as response:
+        return json.load(response)
+
+
+def sha256_of_url(url):
+    digest = hashlib.sha256()
+    with urllib.request.urlopen(url, timeout=120) as response:
+        while chunk := response.read(1 << 20):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def tree(repo, revision, folder):
+    path = f"/{urllib.parse.quote(folder)}" if folder else ""
+    url = f"{HUB}/api/models/{repo}/tree/{revision}{path}?recursive=true"
+    return [entry for entry in get_json(url) if entry["type"] == "file"]
+
+
+def files(repo, revision, folder="", only=None):
+    """[(path relative to folder, size, sha256)] at `revision`, sorted by path."""
+    result = []
+    for entry in tree(repo, revision, folder):
+        relative = entry["path"][len(folder) + 1 :] if folder else entry["path"]
+        if only is not None and relative not in only:
+            continue
+        sha = (entry.get("lfs") or {}).get("oid")
+        if sha is None:
+            sha = sha256_of_url(f"{HUB}/{repo}/resolve/{revision}/{urllib.parse.quote(entry['path'])}")
+        result.append((relative, entry["size"], sha))
+    if only is not None:
+        missing = set(only) - {path for path, _, _ in result}
+        if missing:
+            sys.exit(f"{repo}@{revision}: missing {sorted(missing)}")
+    return sorted(result)
+
+
+def swift_source(name, repo, revision, remote, local, entries):
+    lines = [
+        f"    static let {name} = ModelSource(",
+        f'        repo: "{repo}",',
+        f'        revision: "{revision}",',
+        f'        remoteFolder: "{remote}",',
+        f'        localFolder: "{local}",',
+        "        files: [",
+    ]
+    for path, size, sha in entries:
+        lines.append(f'            ModelFile(path: "{path}", size: {size}, sha256: "{sha}"),')
+    lines += ["        ]", "    )"]
+    return "\n".join(lines)
+
+
+def generate():
+    blocks = []
+    for name, variant, tokenizer in WHISPER_MODELS:
+        print(f"· {variant}", file=sys.stderr)
+        entries = files(WHISPERKIT_REPO, WHISPERKIT_REVISION, variant)
+        blocks.append(
+            swift_source(
+                name, WHISPERKIT_REPO, WHISPERKIT_REVISION, variant,
+                f"models/{WHISPERKIT_REPO}/{variant}", entries,
+            )
+        )
+    for repo, revision in TOKENIZERS.items():
+        print(f"· {repo}", file=sys.stderr)
+        name = "tokenizer" + "".join(part.capitalize() for part in repo.split("/")[1].split("-")[1:])
+        blocks.append(
+            swift_source(name, repo, revision, "", f"models/{repo}", files(repo, revision, only=TOKENIZER_FILES))
+        )
+    print(f"· {VAD_REPO}", file=sys.stderr)
+    blocks.append(
+        swift_source(
+            "sileroVAD", VAD_REPO, VAD_REVISION, VAD_MODEL, f"vad/{VAD_MODEL}",
+            files(VAD_REPO, VAD_REVISION, VAD_MODEL),
+        )
+    )
+    header = (
+        "// swift-format-ignore-file\n"
+        "// Generated by scripts/model-manifest.py. Do not edit by hand.\n"
+        "// Every file Jarvis downloads, pinned to a Hugging Face commit with its size and SHA-256.\n\n"
+        "extension ModelSource {\n"
+    )
+    return header + "\n\n".join(blocks) + "\n}\n"
+
+
+def main():
+    source = generate()
+    if "--check" in sys.argv:
+        current = OUTPUT.read_text() if OUTPUT.exists() else ""
+        if current != source:
+            sys.exit(f"{OUTPUT.relative_to(ROOT)} is out of date; run scripts/model-manifest.py")
+        print("manifest up to date")
+        return
+    OUTPUT.parent.mkdir(parents=True, exist_ok=True)
+    OUTPUT.write_text(source)
+    print(f"wrote {OUTPUT.relative_to(ROOT)}")
+
+
+if __name__ == "__main__":
+    main()

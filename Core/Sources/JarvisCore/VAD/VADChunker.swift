@@ -1,3 +1,4 @@
+@preconcurrency import CoreML
 import FluidAudio
 import Foundation
 
@@ -8,7 +9,7 @@ public struct SpeechChunk: Sendable {
     public var duration: Double { Double(samples.count) / 16_000 }
 }
 
-/// Silero VAD (FluidAudio) driving the Python app's chunking rules: a chunk closes after
+/// Silero VAD (FluidAudio) with these chunking rules: a chunk closes after
 /// `minSilence` of quiet, chunks shorter than `minSpeech` are dropped, and a chunk is force-closed
 /// at `maxSpeech` so it stays inside Whisper's 30 s window.
 ///
@@ -49,10 +50,17 @@ public actor VADChunker {
         self.state = VadStreamState.initial()
     }
 
-    /// Load the Silero model (downloads ~8 MB on first use) and build a chunker.
+    /// Load the Silero model and build a chunker. The model (~1 MB) comes from `ModelStore`,
+    /// pinned and verified, so FluidAudio's own downloader is never used.
     public static func make(config: Config = Config()) async throws -> VADChunker {
-        let vad = try await VadManager(config: VadConfig(defaultThreshold: config.threshold))
-        return VADChunker(vad: vad, config: config)
+        try await ModelStore.ensure([.sileroVAD])
+        let vadConfig = VadConfig(defaultThreshold: config.threshold)
+        let modelConfig = MLModelConfiguration()
+        modelConfig.computeUnits = vadConfig.computeUnits
+        let model = try await MLModel.load(
+            contentsOf: ModelSource.sileroVAD.localURL(base: WhisperModel.defaultDownloadBase),
+            configuration: modelConfig)
+        return VADChunker(vad: VadManager(config: vadConfig, vadModel: model), config: config)
     }
 
     /// Feed microphone samples. Returns chunks that closed during this call.

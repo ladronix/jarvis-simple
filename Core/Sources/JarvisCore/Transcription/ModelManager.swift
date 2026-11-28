@@ -1,7 +1,6 @@
 import Foundation
 import Network
 import Observation
-import WhisperKit
 
 /// Loads and switches speech models, reporting progress for the UI. Owns the live transcriber and
 /// the VAD chunker. Model loading happens off the main thread; only status updates hop back.
@@ -40,40 +39,16 @@ public final class ModelManager {
         self.vadConfig = vadConfig
     }
 
-    /// Written into the model folder after a download finished. Without it the folder may hold a
-    /// partial download (quit, network drop, full disk), which must be resumed, not loaded.
-    static let completeMarker = ".jarvis-download-complete"
-
-    /// Free space needed before a first download: the model plus the CoreML compile cache.
-    static let requiredFreeBytes: Int64 = 3_000_000_000
-
+    /// Whether the model's files are on disk and verified (no download needed).
     public static func isDownloaded(_ model: WhisperModel) -> Bool {
-        let folder = Self.folder(for: model)
-        let fm = FileManager.default
-        if fm.fileExists(atPath: folder.appendingPathComponent(completeMarker).path) { return true }
-        // Downloads from builds that did not write the marker: accept them when every component is
-        // there (the large weight files arrive last), and record that.
-        let required = [
-            "config.json",
-            "MelSpectrogram.mlmodelc/coremldata.bin",
-            "AudioEncoder.mlmodelc/coremldata.bin",
-            "AudioEncoder.mlmodelc/weights/weight.bin",
-            "TextDecoder.mlmodelc/coremldata.bin",
-            "TextDecoder.mlmodelc/weights/weight.bin",
-        ]
-        guard required.allSatisfy({ fm.fileExists(atPath: folder.appendingPathComponent($0).path) }) else {
-            return false
-        }
-        markComplete(folder)
-        return true
+        ModelStore.isReady(model.sources)
     }
 
-    static func markComplete(_ folder: URL) {
-        FileManager.default.createFile(atPath: folder.appendingPathComponent(completeMarker).path, contents: Data())
-    }
+    /// Files a model needs: its CoreML model, its tokenizer and the voice activity model.
+    static func sources(for model: WhisperModel) -> [ModelSource] { model.sources + [.sileroVAD] }
 
-    /// Where FluidAudio keeps the voice activity model (~/Library/Application Support/FluidAudio).
-    public static var vadModelFolder: URL {
+    /// Where FluidAudio kept the voice activity model before Jarvis pinned and verified it.
+    static var legacyVADFolder: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("FluidAudio", isDirectory: true)
     }
@@ -81,12 +56,7 @@ public final class ModelManager {
     /// Delete every downloaded model (speech and voice activity).
     public static func deleteAllModels() {
         try? FileManager.default.removeItem(at: WhisperModel.defaultDownloadBase)
-        try? FileManager.default.removeItem(at: vadModelFolder)
-    }
-
-    public static func folder(for model: WhisperModel) -> URL {
-        WhisperModel.defaultDownloadBase
-            .appendingPathComponent("models/argmaxinc/whisperkit-coreml/\(model.variant)", isDirectory: true)
+        try? FileManager.default.removeItem(at: legacyVADFolder)
     }
 
     /// Load `model` (download first if needed). Cancels a load in flight. Safe to call repeatedly.
@@ -102,30 +72,22 @@ public final class ModelManager {
             let owner: ModelManager? = self
             let started = Date()
             do {
-                let folder: URL
-                if Self.isDownloaded(model) {
-                    folder = Self.folder(for: model)
-                } else {
-                    try Self.checkFreeSpace()
-                    // Files already on disk are skipped, so an interrupted download resumes.
-                    folder = try await WhisperKit.download(
-                        variant: model.variant,
-                        downloadBase: WhisperModel.defaultDownloadBase,
-                        progressCallback: { progress in
-                            let fraction = progress.fractionCompleted
-                            Task { @MainActor in
-                                if case .downloading = owner?.status { owner?.status = .downloading(fraction) }
-                            }
+                // Verify what is on disk and fetch what is missing, all from pinned commits.
+                try await ModelStore.ensure(Self.sources(for: model)) { phase in
+                    guard case .downloading(let fraction) = phase else { return }
+                    Task { @MainActor in
+                        switch owner?.status {
+                        case .downloading?, .loading?: owner?.status = .downloading(fraction)
+                        default: break
                         }
-                    )
-                    Self.markComplete(folder)
+                    }
                 }
                 try Task.checkCancellation()
                 await MainActor.run { owner?.status = .loading }
 
                 var options = WhisperKitTranscriber.Options()
                 options.model = model
-                options.modelFolder = folder
+                options.modelFolder = model.folder
                 let transcriber = WhisperKitTranscriber(options: options)
                 async let chunkerLoad = VADChunker.make(config: vadConfig)
                 try await transcriber.warmUp()
@@ -187,7 +149,7 @@ public final class ModelManager {
                 default: break
                 }
             }
-            if error is DiskSpaceError {
+            if case ModelStoreError.notEnoughSpace? = error as? ModelStoreError {
                 self = .diskFull
                 return
             }
@@ -210,16 +172,6 @@ public final class ModelManager {
                 return "Not enough disk space. The speech model needs about 3 GB free; free up space and press Retry."
             case .other(let m): return m
             }
-        }
-    }
-
-    struct DiskSpaceError: Error {}
-
-    static func checkFreeSpace() throws {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        let values = try? base.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
-        if let free = values?.volumeAvailableCapacityForImportantUsage, free < requiredFreeBytes {
-            throw DiskSpaceError()
         }
     }
 
@@ -246,7 +198,7 @@ public final class ModelManager {
     /// Delete this model's files and download it again (a damaged or partial download).
     public func redownload(_ model: WhisperModel) {
         unload()
-        try? FileManager.default.removeItem(at: Self.folder(for: model))
+        ModelStore.remove(model.sources)
         load(model)
     }
 

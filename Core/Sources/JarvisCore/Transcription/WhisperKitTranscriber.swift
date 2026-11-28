@@ -9,12 +9,13 @@ public actor WhisperKitTranscriber: Transcriber {
     public struct Options: Sendable {
         public var model: WhisperModel = .default
         public var downloadBase: URL = WhisperModel.defaultDownloadBase
-        /// Already-downloaded model folder. When set, no network access happens.
+        /// Model folder. When nil, the model's pinned files are verified (and fetched if missing)
+        /// through `ModelStore` first. WhisperKit itself never downloads.
         public var modelFolder: URL?
         /// Run CoreML specialization at load (slower first load, lower peak memory).
         public var prewarm: Bool = true
         public var verbose: Bool = false
-        /// Mirrors the Python app: no_speech_threshold 0.6, compression_ratio_threshold 2.4,
+        /// Whisper's reference settings: no_speech_threshold 0.6, compression_ratio_threshold 2.4,
         /// logprob -1.0, no context carry-over between chunks.
         public var noSpeechThreshold: Float = 0.6
         public var compressionRatioThreshold: Float = 2.4
@@ -38,15 +39,24 @@ public actor WhisperKitTranscriber: Transcriber {
     public func warmUp() async throws {
         if whisperKit != nil { return }
         let t0 = Date()
+        let folder: URL
+        if let modelFolder = options.modelFolder {
+            folder = modelFolder
+        } else {
+            try await ModelStore.ensure(options.model.sources, base: options.downloadBase)
+            folder = options.model.sources[0].localURL(base: options.downloadBase)
+        }
         let config = WhisperKitConfig(
             model: options.model.variant,
             downloadBase: options.downloadBase,
-            modelFolder: options.modelFolder?.path,
+            modelFolder: folder.path,
+            // The tokenizer is one of the verified sources, under models/<repo> of the base.
+            tokenizerFolder: options.downloadBase,
             verbose: options.verbose,
             logLevel: options.verbose ? .debug : .error,
             prewarm: options.prewarm,
             load: true,
-            download: options.modelFolder == nil
+            download: false
         )
         config.computeOptions = ModelComputeOptions()
         let kit = try await WhisperKit(config)
