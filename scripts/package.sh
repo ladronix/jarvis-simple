@@ -86,7 +86,8 @@ if [[ "$MODE" == --release ]]; then
   echo "▶ notarized and stapled"
 fi
 
-shasum -a 256 "$DMG" | tee "$DMG.sha256"
+# File name only: the checksum file is published next to the disk image.
+(cd "$DIST" && shasum -a 256 "${DMG:t}" | tee "${DMG:t}.sha256")
 
 if [[ "$MODE" == --install ]]; then
   # Prefer /Applications (admin rights via sudo when needed); otherwise fall back to
